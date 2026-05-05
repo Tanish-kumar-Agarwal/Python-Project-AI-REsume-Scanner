@@ -4,10 +4,15 @@ import sqlite3
 import matplotlib.pyplot as plt
 
 from auth import register_user, login_user, get_user_profile, update_user_profile
-from resume_parser import extract_text_from_pdf
-from resume_analyzer import analyze_resume
-from job_recommender import recommend_jobs
-from charts import skill_chart, skill_gap_chart, career_roadmap_chart
+from resume_parser import extract_text_from_pdf, parse_resume
+from resume_analyzer import analyze_resume, get_skill_gap, get_career_roadmap, detect_current_level
+from job_recommender import recommend_jobs, get_missing_skills
+from charts import skill_chart, skill_gap_chart, career_roadmap_chart, ats_score_chart, learning_timeline_chart
+from resume_scorer import calculate_ats_score
+from learning_path import build_learning_path, get_platform_badge
+from star_generator import get_star_questions, get_all_roles
+from resume_maker import generate_resume_pdf
+from data.skills_db import get_roles, get_required_skills
 import database
 
 # PAGE CONFIG
@@ -64,6 +69,12 @@ if "resume_score" not in st.session_state:
     st.session_state.resume_score = 0
 if "resume_skills" not in st.session_state:
     st.session_state.resume_skills = []
+if "resume" not in st.session_state:
+    st.session_state.resume = None
+if "resume_text" not in st.session_state:
+    st.session_state.resume_text = ""
+if "target_role" not in st.session_state:
+    st.session_state.target_role = "software engineer"
 
 # AUTH PAGE
 def auth_page():
@@ -114,7 +125,29 @@ def dashboard():
         st.markdown(f"### 👤 {st.session_state.user}")
         st.markdown("---")
         
-        menu = ["Home", "Upload Resume", "Resume History", "Resume Analytics", "Application Tracker", "Skill Gap Analysis", "Find Jobs", "Career Roadmap", "Interview Prep", "Skill Learning Path", "Mock Interviews", "Edit Profile", "Logout"]
+        st.markdown("**📌 Core Features**")
+        menu = [
+            "Home",
+            "📄 Upload & Scan",
+            "📊 Skill Gap Analysis",
+            "🛣️ Career Roadmap",
+            "📝 Resume Maker",
+            "📚 Learning Path",
+            "⭐ STAR Questions",
+            "🎯 ATS Score",
+        ]
+        st.markdown("---")
+        st.markdown("**🔧 Tools**")
+        menu += [
+            "Resume History",
+            "Resume Analytics",
+            "Application Tracker",
+            "Find Jobs",
+            "Interview Prep",
+            "Mock Interviews",
+            "Edit Profile",
+            "Logout",
+        ]
         choice = st.selectbox("Navigation", menu)
         st.markdown("---")
     
@@ -748,10 +781,10 @@ def dashboard():
                 conversion_rate = ((phone + interview + offer) / total) * 100
                 st.write(f"**Pipeline Conversion:** {conversion_rate:.1f}% (advancing through stages)")
     
-    # UPLOAD RESUME
-    elif choice == "Upload Resume":
-        st.header("📄 Upload Your Resume")
-        st.write("Upload a PDF resume to get started with AI-powered analysis")
+    # FEATURE 1: UPLOAD & SCAN
+    elif choice == "📄 Upload & Scan":
+        st.header("📄 Upload & Scan Your Resume")
+        st.write("Upload a PDF resume to extract your profile. **All other features read from this scan.**")
         
         file = st.file_uploader("Choose a PDF file", type=["pdf"])
         
@@ -762,8 +795,9 @@ def dashboard():
             with open(path, "wb") as f:
                 f.write(file.getbuffer())
             
-            # Extract and analyze
+            # Extract text and run full parse
             text = extract_text_from_pdf(path)
+            parsed = parse_resume(text)
             score, skills = analyze_resume(text)
             
             # Save to database
@@ -776,24 +810,52 @@ def dashboard():
             conn.commit()
             conn.close()
             
-            # Store in session
+            # Store everything in session state
             st.session_state.resume_score = score
             st.session_state.resume_skills = skills
+            st.session_state.resume = parsed
+            st.session_state.resume_text = text
             
             st.success("✅ Resume Uploaded and Analyzed Successfully")
             st.balloons()
             
             # Show results
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Resume Score", f"{score}/100")
             with col2:
                 st.metric("Skills Found", len(skills))
             with col3:
-                st.metric("Completion", f"{score}%")
+                st.metric("Experience", f"{parsed.get('years_of_experience', 0)} yrs")
+            with col4:
+                st.metric("Word Count", len(text.split()))
             
-            st.write("### Detected Skills")
-            st.write(", ".join([f"🔹 {s.title()}" for s in skills]))
+            # Parsed fields
+            st.markdown("---")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("### 👤 Extracted Info")
+                st.write(f"**Name:** {parsed.get('name', 'N/A')}")
+                st.write(f"**Email:** {parsed.get('email', 'N/A')}")
+                st.write(f"**Phone:** {parsed.get('phone', 'N/A')}")
+                if parsed.get("education"):
+                    st.write("**Education:**")
+                    for edu in parsed["education"][:3]:
+                        st.write(f"  🎓 {edu}")
+            with c2:
+                st.write("### 🔧 Detected Skills")
+                if skills:
+                    skill_cols = st.columns(2)
+                    for i, s in enumerate(skills):
+                        with skill_cols[i % 2]:
+                            st.write(f"🔹 {s.title()}")
+                else:
+                    st.info("No skills detected — try a different PDF.")
+        
+        elif st.session_state.resume:
+            st.info("✅ Resume already loaded. You can upload a new one or proceed to other features.")
+            parsed = st.session_state.resume
+            st.write(f"**Name:** {parsed.get('name', 'N/A')} · **Skills:** {len(st.session_state.resume_skills)} · **Experience:** {parsed.get('years_of_experience', 0)} yrs")
     
     # RESUME HISTORY
     elif choice == "Resume History":
@@ -820,42 +882,44 @@ def dashboard():
         else:
             st.info("📭 No resumes uploaded yet")
     
-    # SKILL GAP ANALYSIS
-    elif choice == "Skill Gap Analysis":
+    # FEATURE 2: SKILL GAP ANALYSIS
+    elif choice == "📊 Skill Gap Analysis":
         st.header("📊 Skill Gap Analysis")
-        st.write("Identify the skills you need to develop")
+        st.write("Compare your skills against industry standards for your target role.")
         
-        conn = sqlite3.connect("users.db")
-        c = conn.cursor()
-        c.execute(
-            "SELECT file_path FROM resumes WHERE user_email=? ORDER BY id DESC LIMIT 1",
-            (st.session_state.user,)
-        )
-        data = c.fetchone()
-        conn.close()
-        
-        if data:
-            path = data[0]
-            text = extract_text_from_pdf(path)
-            score, skills = analyze_resume(text)
+        if not st.session_state.resume:
+            st.warning("⚠️ Please upload a resume first in 'Upload & Scan'")
+        else:
+            roles = get_roles()
+            st.session_state.target_role = st.selectbox("Select Target Job Role:", roles, index=roles.index(st.session_state.target_role) if st.session_state.target_role in roles else 0)
             
-            required = ["python", "sql", "machine learning", "communication", "leadership", "problem solving"]
+            have, missing, match_pct = get_skill_gap(st.session_state.resume_skills, st.session_state.target_role)
             
-            fig = skill_gap_chart(skills, required)
-            st.pyplot(fig)
-            
-            # Skills summary
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 1])
             with col1:
-                st.write("### Your Skills")
-                st.write(", ".join([f"✅ {s.title()}" for s in skills]))
+                st.metric("Role Match", f"{int(match_pct)}%")
+                st.write(f"### 🎯 {st.session_state.target_role.title()}")
+                st.write("The skills highlighted below are required for this role but missing from your profile.")
             
             with col2:
-                missing = [s for s in required if s not in skills]
-                st.write("### Skills to Develop")
-                st.write(", ".join([f"⭕ {s.title()}" for s in missing]))
-        else:
-            st.warning("⚠️ Please upload a resume first")
+                fig = skill_gap_chart(st.session_state.resume_skills, get_required_skills(st.session_state.target_role))
+                st.pyplot(fig)
+            
+            st.markdown("---")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.success(f"✅ **Skills You Have ({len(have)})**")
+                for s in have:
+                    st.write(f"• {s.title()}")
+            with c2:
+                st.error(f"❌ **Missing Skills ({len(missing)})**")
+                for s in missing:
+                    st.write(f"• {s.title()}")
+                if missing:
+                    if st.button("🚀 Generate Learning Path"):
+                        # This would navigate to learning path page in a real app, 
+                        # here we just suggest the user clicks the sidebar.
+                        st.info("Click on '📚 Learning Path' in the sidebar to see your custom study plan!")
     
     # FIND JOBS
     elif choice == "Find Jobs":
@@ -888,34 +952,234 @@ def dashboard():
         else:
             st.warning("⚠️ Please upload a resume first")
     
-    # CAREER ROADMAP
-    elif choice == "Career Roadmap":
-        st.header("🛣️ Career Roadmap")
-        st.write("Your personalized career development path")
+    # FEATURE 3: CAREER ROADMAP
+    elif choice == "🛣️ Career Roadmap":
+        st.header("🛣️ Your Career Roadmap")
+        st.write("A visual guide to your professional growth.")
         
-        conn = sqlite3.connect("users.db")
-        c = conn.cursor()
-        c.execute(
-            "SELECT file_path FROM resumes WHERE user_email=? ORDER BY id DESC LIMIT 1",
-            (st.session_state.user,)
-        )
-        data = c.fetchone()
-        conn.close()
-        
-        if data:
-            path = data[0]
-            text = extract_text_from_pdf(path)
-            score, skills = analyze_resume(text)
-            
-            fig = career_roadmap_chart(skills)
-            st.pyplot(fig)
-            
-            st.write("### Your Career Path")
-            st.write("1. 📝 **Current Level**: Associate Engineer")
-            st.write("2. 📝 **Next Level**: Senior Engineer (6-12 months)")
-            st.write("3. 📝 **Final Goal**: Tech Lead (2-3 years)")
+        if not st.session_state.resume:
+            st.warning("⚠️ Please upload a resume first in 'Upload & Scan'")
         else:
-            st.warning("⚠️ Please upload a resume first")
+            current_level = detect_current_level(st.session_state.resume.get("years_of_experience", 0))
+            st.info(f"📍 **Detected Current Level:** {current_level} ({st.session_state.resume.get('years_of_experience', 0)} years exp)")
+            
+            target_role = st.selectbox("Target Career Path:", get_roles(), key="roadmap_role_select")
+            milestones = get_career_roadmap(target_role)
+            
+            if milestones:
+                fig = career_roadmap_chart(milestones)
+                st.pyplot(fig)
+                
+                st.markdown("### 🏆 Milestone Details")
+                for i, ms in enumerate(milestones, 1):
+                    with st.expander(f"Step {i}: {ms['title']} ({ms['years']} years)"):
+                        st.write("**Key Skills to Master:**")
+                        st.write(", ".join(ms["skills"]))
+            else:
+                st.info("No roadmap data available for this specific role yet.")
+
+    # FEATURE 4: RESUME MAKER
+    elif choice == "📝 Resume Maker":
+        st.header("📝 Standard Resume Maker")
+        st.write("Build a clean, ATS-friendly resume matching Jake's template.")
+        
+        with st.form("resume_form"):
+            st.subheader("Personal Information")
+            c1, c2 = st.columns(2)
+            with c1:
+                name = st.text_input("Full Name", value=st.session_state.resume.get("name", "") if st.session_state.resume else "")
+                email = st.text_input("Email", value=st.session_state.resume.get("email", "") if st.session_state.resume else "")
+            with c2:
+                phone = st.text_input("Phone", value=st.session_state.resume.get("phone", "") if st.session_state.resume else "")
+                location = st.text_input("Location (City, State)")
+            
+            c3, c4 = st.columns(2)
+            with c3:
+                linkedin = st.text_input("LinkedIn URL")
+            with c4:
+                github = st.text_input("GitHub URL")
+            
+            st.subheader("Professional Summary")
+            summary = st.text_area("Briefly describe your professional background and goals.")
+            
+            st.subheader("Experience")
+            st.write("Add your work history. Use bullet points for accomplishments.")
+            
+            # Simple list of experiences (mock dynamic rows)
+            experiences = []
+            for i in range(2):
+                st.markdown(f"**Position {i+1}**")
+                e1, e2 = st.columns(2)
+                with e1:
+                    e_title = st.text_input(f"Job Title {i+1}", key=f"et_{i}")
+                    e_comp = st.text_input(f"Company {i+1}", key=f"ec_{i}")
+                with e2:
+                    e_loc = st.text_input(f"Location {i+1}", key=f"el_{i}")
+                    e_dates = st.text_input(f"Dates (e.g. Jan 2020 - Present) {i+1}", key=f"ed_{i}")
+                e_bullets = st.text_area(f"Bullets (one per line) {i+1}", key=f"eb_{i}")
+                if e_title:
+                    experiences.append({
+                        "title": e_title, "company": e_comp, "location": e_loc, 
+                        "dates": e_dates, "bullets": e_bullets.split("\n")
+                    })
+            
+            st.subheader("Education")
+            education = []
+            for i in range(1):
+                ed1, ed2 = st.columns(2)
+                with ed1:
+                    edu_degree = st.text_input("Degree", value=st.session_state.resume.get("education", [""])[0] if st.session_state.resume and st.session_state.resume.get("education") else "")
+                    edu_school = st.text_input("University/School")
+                with ed2:
+                    edu_loc = st.text_input("School Location")
+                    edu_dates = st.text_input("Dates (e.g. 2016 - 2020)")
+                edu_details = st.text_area("Additional Details (GPA, Honors, etc.)")
+                if edu_degree:
+                    education.append({
+                        "degree": edu_degree, "school": edu_school, 
+                        "location": edu_loc, "dates": edu_dates, "details": edu_details
+                    })
+            
+            st.subheader("Skills")
+            all_skills = st.text_area("Skills (comma separated)", value=", ".join(st.session_state.resume_skills) if st.session_state.resume_skills else "")
+            
+            submitted = st.form_submit_button("Generate PDF Resume")
+            
+            if submitted:
+                resume_data = {
+                    "name": name, "email": email, "phone": phone, 
+                    "linkedin": linkedin, "github": github, "location": location,
+                    "summary": summary, "experiences": experiences, 
+                    "education": education, "skills": all_skills
+                }
+                pdf_bytes = generate_resume_pdf(resume_data)
+                st.success("✅ Resume Generated Successfully!")
+                st.download_button(
+                    label="📥 Download PDF Resume",
+                    data=pdf_bytes,
+                    file_name=f"{name.replace(' ', '_')}_Resume.pdf",
+                    mime="application/pdf"
+                )
+
+    # FEATURE 5: LEARNING PATH
+    elif choice == "📚 Learning Path":
+        st.header("📚 Your Learning Path")
+        st.write("Personalized resource map to bridge your skill gaps.")
+        
+        if not st.session_state.resume:
+            st.warning("⚠️ Please upload a resume first in 'Upload & Scan'")
+        else:
+            _, missing, _ = get_skill_gap(st.session_state.resume_skills, st.session_state.target_role)
+            
+            if not missing:
+                st.success("🎉 No missing skills found for the target role! You are ready to apply.")
+            else:
+                path_data = build_learning_path(missing)
+                
+                col1, col2 = st.columns([1, 1.5])
+                with col1:
+                    st.metric("Total Learning Time", f"{path_data['total_hours']} Hours")
+                    st.metric("Estimated Completion", f"{path_data['estimated_weeks']} Weeks")
+                    st.caption("Based on 10 hours of study per week.")
+                    
+                    fig = learning_timeline_chart(path_data["path"])
+                    st.pyplot(fig)
+                
+                with col2:
+                    st.subheader("🚀 Step-by-Step Curriculum")
+                    for item in path_data["path"]:
+                        with st.expander(f"**{item['skill'].upper()}** ({item['total_hours']}h total)"):
+                            for res in item["resources"]:
+                                badge = get_platform_badge(res["platform"])
+                                st.markdown(
+                                    f"""
+                                    <div style='background: white; padding: 10px; border-radius: 5px; border-left: 5px solid {badge['color']}; margin-bottom: 10px; border-top: 1px solid #eee; border-right: 1px solid #eee; border-bottom: 1px solid #eee;'>
+                                        <p style='margin: 0; font-weight: bold;'>{badge['emoji']} {res['title']}</p>
+                                        <p style='margin: 5px 0; font-size: 13px;'>{res['platform']} • {res['hours']} Hours</p>
+                                        <a href='{res['url']}' target='_blank' style='text-decoration: none; color: #667eea; font-weight: bold;'>Go to Course ➜</a>
+                                    </div>
+                                    """, unsafe_allow_html=True
+                                )
+
+    # FEATURE 6: STAR QUESTIONS
+    elif choice == "⭐ STAR Questions":
+        st.header("⭐ STAR Interview Questions")
+        st.write("Behavioral questions tailored to your profile and target role.")
+        
+        if not st.session_state.resume:
+            st.warning("⚠️ Please upload a resume first in 'Upload & Scan'")
+        else:
+            role = st.selectbox("Role for Interview Prep:", get_roles(), index=get_roles().index(st.session_state.target_role) if st.session_state.target_role in get_roles() else 0)
+            questions = get_star_questions(role, st.session_state.resume_skills)
+            
+            st.info(f"Showing {len(questions)} high-relevance behavioral questions for a {role.title()} role.")
+            
+            for i, q in enumerate(questions, 1):
+                with st.expander(f"Q{i}: {q['question']}"):
+                    st.markdown("#### 💡 How to Answer (STAR Method)")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**S - Situation:** {q['s']}")
+                        st.markdown(f"**T - Task:** {q['t']}")
+                    with col2:
+                        st.markdown(f"**A - Action:** {q['a']}")
+                        st.markdown(f"**R - Result:** {q['r']}")
+                    
+                    st.divider()
+                    user_ans = st.text_area("Draft your answer here:", key=f"star_ans_{i}")
+                    if st.button(f"Save Draft {i}"):
+                        st.success("Draft saved!")
+
+    # FEATURE 7: ATS SCORE
+    elif choice == "🎯 ATS Score":
+        st.header("🎯 ATS Compatibility Score")
+        st.write("How well does your resume perform against applicant tracking systems?")
+        
+        if not st.session_state.resume_text:
+            st.warning("⚠️ Please upload a resume first in 'Upload & Scan'")
+        else:
+            role = st.selectbox("Score against Role:", get_roles(), key="ats_role_select")
+            score_data = calculate_ats_score(st.session_state.resume_text, role)
+            
+            col1, col2 = st.columns([1, 1.5])
+            with col1:
+                # Big Score Circle-ish
+                st.markdown(
+                    f"""
+                    <div style='text-align: center; background: #667eea; color: white; padding: 40px; border-radius: 50%; width: 200px; height: 200px; display: flex; flex-direction: column; justify-content: center; margin: 0 auto;'>
+                        <p style='margin: 0; font-size: 14px;'>ATS SCORE</p>
+                        <h1 style='margin: 0; font-size: 60px;'>{score_data['total_score']}</h1>
+                        <p style='margin: 0; font-size: 18px;'>Grade: {score_data['grade']}</p>
+                    </div>
+                    """, unsafe_allow_html=True
+                )
+                st.markdown("<br>", unsafe_allow_html=True)
+                fig = ats_score_chart(score_data["breakdown"])
+                st.pyplot(fig)
+            
+            with col2:
+                st.subheader("🛠️ Actionable Fixes")
+                for fix in score_data["fixes"]:
+                    st.markdown(f"* {fix}")
+                
+                st.markdown("---")
+                st.subheader("🔍 Scan Results")
+                tab1, tab2, tab3 = st.tabs(["Keywords", "Structure", "Formatting"])
+                with tab1:
+                    st.write(f"**Keywords Found ({len(score_data['keywords_found'])}):**")
+                    st.write(", ".join(score_data['keywords_found']) if score_data['keywords_found'] else "None")
+                    st.write(f"**Missing Keywords ({len(score_data['keywords_missing'])}):**")
+                    st.write(", ".join(score_data['keywords_missing'][:10]) if score_data['keywords_missing'] else "None")
+                with tab2:
+                    st.write(f"**Sections Detected:** {', '.join(score_data['sections_found'])}")
+                    st.write(f"**Sections Missing:** {', '.join(score_data['sections_missing']) if score_data['sections_missing'] else 'None'}")
+                    st.write(f"**Word Count:** {score_data['word_count']} (Ideal: 400-700)")
+                with tab3:
+                    if score_data["format_issues"]:
+                        for issue in score_data["format_issues"]:
+                            st.warning(issue)
+                    else:
+                        st.success("Clean format detected! No major parsing issues.")
     
     # INTERVIEW PREP HUB - TIER 2 FEATURE
     elif choice == "Interview Prep":
