@@ -1,0 +1,5 @@
+streamlit
+pymupdf
+matplotlib
+numpy
+fpdf2
