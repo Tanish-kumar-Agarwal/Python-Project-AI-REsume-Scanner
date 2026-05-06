@@ -59,12 +59,56 @@ st.markdown("""
         section[data-testid="stVerticalBlock"] > div {
             background-color: #f8f9fa !important;
         }
+
+        /* ── Card click overlay ─────────────────────────────────────────
+           For every markdown card followed by a stButton sibling,
+           lift the button container up to sit exactly over the card.
+           The button is made transparent so the card art shows through.
+        ────────────────────────────────────────────────────────────────── */
+        .element-container:has(.action-card) + .element-container {
+            transform: translateY(-270px);
+            margin-bottom: -270px;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .element-container:has(.action-card) + .element-container [data-testid="stButton"] {
+            pointer-events: all;
+        }
+        .element-container:has(.action-card) + .element-container [data-testid="stButton"] button {
+            height: 270px !important;
+            min-height: 270px !important;
+            width: 100% !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            cursor: pointer !important;
+            opacity: 0 !important;
+        }
+
+        .element-container:has(.dash-card) + .element-container {
+            transform: translateY(-140px);
+            margin-bottom: -140px;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .element-container:has(.dash-card) + .element-container [data-testid="stButton"] {
+            pointer-events: all;
+        }
+        .element-container:has(.dash-card) + .element-container [data-testid="stButton"] button {
+            height: 140px !important;
+            min-height: 140px !important;
+            width: 100% !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            cursor: pointer !important;
+            opacity: 0 !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-# SESSION STATE
 if "user" not in st.session_state:
-    st.session_state.user = None
+    st.session_state.user = "guest"  # Auth disabled — skip login
 if "resume_score" not in st.session_state:
     st.session_state.resume_score = 0
 if "resume_skills" not in st.session_state:
@@ -75,6 +119,8 @@ if "resume_text" not in st.session_state:
     st.session_state.resume_text = ""
 if "target_role" not in st.session_state:
     st.session_state.target_role = "software engineer"
+if "nav_target" not in st.session_state:
+    st.session_state.nav_target = "Home"
 
 # AUTH PAGE
 def auth_page():
@@ -126,7 +172,7 @@ def dashboard():
         st.markdown("---")
         
         st.markdown("**📌 Core Features**")
-        menu = [
+        ALL_CORE = [
             "Home",
             "📄 Upload & Scan",
             "📊 Skill Gap Analysis",
@@ -136,9 +182,7 @@ def dashboard():
             "⭐ STAR Questions",
             "🎯 ATS Score",
         ]
-        st.markdown("---")
-        st.markdown("**🔧 Tools**")
-        menu += [
+        ALL_TOOLS = [
             "Resume History",
             "Resume Analytics",
             "Application Tracker",
@@ -148,8 +192,22 @@ def dashboard():
             "Edit Profile",
             "Logout",
         ]
-        choice = st.selectbox("Navigation", menu)
+
+        for page in ALL_CORE:
+            if st.button(page, key=f"nav_{page}", use_container_width=True):
+                st.session_state.nav_target = page
+                st.rerun()
+
         st.markdown("---")
+        st.markdown("**🔧 Tools**")
+        for page in ALL_TOOLS:
+            if st.button(page, key=f"nav_{page}", use_container_width=True):
+                st.session_state.nav_target = page
+                st.rerun()
+
+        choice = st.session_state.nav_target
+        st.markdown("---")
+
     
     # HOME PAGE
     if choice == "Home":
@@ -187,7 +245,7 @@ def dashboard():
             with col_a:
                 st.markdown(
                     """
-                    <div style='background: linear-gradient(135deg, #6ba3f5 0%, #6d5dd8 100%); 
+                    <div class='action-card' style='background: linear-gradient(135deg, #6ba3f5 0%, #6d5dd8 100%); 
                                 padding: 30px 20px; border-radius: 15px; text-align: center; 
                                 color: white; min-height: 270px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 4px 15px rgba(107, 163, 245, 0.3);'>
@@ -198,11 +256,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Upload", key="card_btn_upload", use_container_width=True):
+                    st.session_state.nav_target = "📄 Upload & Scan"
+                    st.rerun()
             
             with col_b:
                 st.markdown(
                     """
-                    <div style='background: linear-gradient(135deg, #b991f5 0%, #d05fd8 100%); 
+                    <div class='action-card' style='background: linear-gradient(135deg, #b991f5 0%, #d05fd8 100%); 
                                 padding: 30px 20px; border-radius: 15px; text-align: center; 
                                 color: white; min-height: 270px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 4px 15px rgba(185, 145, 245, 0.3);'>
@@ -213,11 +274,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Find Jobs", key="card_btn_jobs", use_container_width=True):
+                    st.session_state.nav_target = "Find Jobs"
+                    st.rerun()
             
             with col_c:
                 st.markdown(
                     """
-                    <div style='background: linear-gradient(135deg, #f794b4 0%, #f5b05f 100%); 
+                    <div class='action-card' style='background: linear-gradient(135deg, #f794b4 0%, #f5b05f 100%); 
                                 padding: 30px 20px; border-radius: 15px; text-align: center; 
                                 color: white; min-height: 270px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 4px 15px rgba(247, 148, 180, 0.3);'>
@@ -228,11 +292,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Skill Gap", key="card_btn_skills", use_container_width=True):
+                    st.session_state.nav_target = "📊 Skill Gap Analysis"
+                    st.rerun()
             
             with col_d:
                 st.markdown(
                     """
-                    <div style='background: linear-gradient(135deg, #7de5d1 0%, #5dd8c8 100%); 
+                    <div class='action-card' style='background: linear-gradient(135deg, #7de5d1 0%, #5dd8c8 100%); 
                                 padding: 30px 20px; border-radius: 15px; text-align: center; 
                                 color: white; min-height: 270px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 4px 15px rgba(125, 229, 209, 0.3);'>
@@ -243,6 +310,9 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to STAR Questions", key="card_btn_interviews", use_container_width=True):
+                    st.session_state.nav_target = "⭐ STAR Questions"
+                    st.rerun()
             
             # Explore Dashboard Section
             st.markdown(
@@ -255,7 +325,7 @@ def dashboard():
             with col_e:
                 st.markdown(
                     """
-                    <div style='background: white; padding: 25px; border-radius: 10px; 
+                    <div class='dash-card' style='background: white; padding: 25px; border-radius: 10px; 
                                 text-align: center; border: 1px solid #e0e0e0; 
                                 min-height: 140px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);'>
@@ -265,11 +335,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Profile", key="dash_btn_profile", use_container_width=True):
+                    st.session_state.nav_target = "Edit Profile"
+                    st.rerun()
             
             with col_f:
                 st.markdown(
                     """
-                    <div style='background: white; padding: 25px; border-radius: 10px; 
+                    <div class='dash-card' style='background: white; padding: 25px; border-radius: 10px; 
                                 text-align: center; border: 1px solid #e0e0e0; 
                                 min-height: 140px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
@@ -283,11 +356,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Skill Gap", key="dash_btn_skillgap", use_container_width=True):
+                    st.session_state.nav_target = "📊 Skill Gap Analysis"
+                    st.rerun()
             
             with col_g:
                 st.markdown(
                     """
-                    <div style='background: white; padding: 25px; border-radius: 10px; 
+                    <div class='dash-card' style='background: white; padding: 25px; border-radius: 10px; 
                                 text-align: center; border: 1px solid #e0e0e0; 
                                 min-height: 140px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);'>
@@ -297,11 +373,14 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Roadmap", key="dash_btn_roadmap", use_container_width=True):
+                    st.session_state.nav_target = "🛣️ Career Roadmap"
+                    st.rerun()
             
             with col_h:
                 st.markdown(
                     """
-                    <div style='background: white; padding: 25px; border-radius: 10px; 
+                    <div class='dash-card' style='background: white; padding: 25px; border-radius: 10px; 
                                 text-align: center; border: 1px solid #e0e0e0; 
                                 min-height: 140px; display: flex; flex-direction: column; 
                                 justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05);'>
@@ -311,6 +390,9 @@ def dashboard():
                     """,
                     unsafe_allow_html=True
                 )
+                if st.button("Go to Analytics", key="dash_btn_analytics", use_container_width=True):
+                    st.session_state.nav_target = "Resume Analytics"
+                    st.rerun()
         
         # Right Sidebar Profile
         with col_sidebar:
@@ -361,10 +443,12 @@ def dashboard():
                 col_btn1, col_btn2 = st.columns(2, gap="small")
                 with col_btn1:
                     if st.button("✏️ Edit", use_container_width=True, key="edit_profile_home"):
-                        pass
+                        st.session_state.nav_target = "Edit Profile"
+                        st.rerun()
                 with col_btn2:
                     if st.button("📝 Upload", use_container_width=True, key="upload_home"):
-                        pass
+                        st.session_state.nav_target = "📄 Upload & Scan"
+                        st.rerun()
                 
                 st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
                 
@@ -1649,8 +1733,5 @@ class LRUCache:
         st.session_state.user = None
         st.rerun()
 
-# MAIN FLOW
-if st.session_state.user is None:
-    auth_page()
-else:
-    dashboard()
+# MAIN FLOW — Auth disabled, go straight to dashboard
+dashboard()
