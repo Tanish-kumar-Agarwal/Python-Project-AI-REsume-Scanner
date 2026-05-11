@@ -1530,14 +1530,18 @@ def dashboard():
                     "summary": summary, "experiences": experiences, 
                     "education": education, "skills": all_skills
                 }
-                pdf_bytes = generate_resume_pdf(resume_data)
+                st.session_state.generated_pdf = bytes(generate_resume_pdf(resume_data))
+                st.session_state.generated_pdf_name = f"{name.replace(' ', '_')}_Resume.pdf"
                 st.success("✅ Resume Generated Successfully!")
-                st.download_button(
-                    label="📥 Download PDF Resume",
-                    data=pdf_bytes,
-                    file_name=f"{name.replace(' ', '_')}_Resume.pdf",
-                    mime="application/pdf"
-                )
+                st.rerun()
+
+        if "generated_pdf" in st.session_state and st.session_state.generated_pdf:
+            st.download_button(
+                label="📥 Download PDF Resume",
+                data=st.session_state.generated_pdf,
+                file_name=st.session_state.generated_pdf_name,
+                mime="application/pdf"
+            )
 
     # FEATURE 5: LEARNING PATH
     elif choice == "Learning Path":
