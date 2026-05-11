@@ -1530,15 +1530,15 @@ def dashboard():
                     "summary": summary, "experiences": experiences, 
                     "education": education, "skills": all_skills
                 }
-                st.session_state.generated_pdf = bytes(generate_resume_pdf(resume_data))
+                st.session_state.resume_pdf_bytes = bytes(generate_resume_pdf(resume_data))
                 st.session_state.generated_pdf_name = f"{name.replace(' ', '_')}_Resume.pdf"
                 st.success("✅ Resume Generated Successfully!")
                 st.rerun()
 
-        if "generated_pdf" in st.session_state and st.session_state.generated_pdf:
+        if "resume_pdf_bytes" in st.session_state and st.session_state.resume_pdf_bytes:
             st.download_button(
                 label="📥 Download PDF Resume",
-                data=st.session_state.generated_pdf,
+                data=st.session_state.resume_pdf_bytes,
                 file_name=st.session_state.generated_pdf_name,
                 mime="application/pdf"
             )
